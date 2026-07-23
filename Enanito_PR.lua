@@ -13,6 +13,9 @@ local Settings = {
     Aimbot = false,
     FOVSize = 100,
     Smoothness = 0.18,
+    AimbotBindKey = Enum.KeyCode.E,
+    AimbotBindMode = false,
+    AimbotKeyDown = false,
     Visible = true
 }
 
@@ -145,6 +148,20 @@ CreateButton("ESP", "ESP: ON", "ESP: OFF", Color3.fromRGB(0, 120, 255))
 CreateButton("Tracers", "Tracers: ON", "Tracers: OFF", Color3.fromRGB(0, 120, 255))
 CreateButton("Aimbot", "Aimbot: ON", "Aimbot: OFF", Color3.fromRGB(255, 0, 0))
 
+local AimbotBindButton = Instance.new("TextButton", ControlFrame)
+AimbotBindButton.Size = UDim2.new(0, 180, 0, 35)
+AimbotBindButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+AimbotBindButton.Text = "Bind Key: " .. Settings.AimbotBindKey.Name
+AimbotBindButton.TextColor3 = Color3.new(1, 1, 1)
+AimbotBindButton.Font = Enum.Font.GothamBold
+AimbotBindButton.TextSize = 13
+Instance.new("UICorner", AimbotBindButton)
+AimbotBindButton.MouseButton1Click:Connect(function()
+    Settings.AimbotBindMode = true
+    AimbotBindButton.Text = "Press key..."
+    AimbotBindButton.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+end)
+
 local FOVInput = Instance.new("TextBox", ControlFrame)
 FOVInput.Size = UDim2.new(0, 180, 0, 30)
 FOVInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
@@ -230,7 +247,7 @@ RunService.RenderStepped:Connect(function()
         else drawings.Box.Visible, drawings.Tracer.Visible = false, false end
     end
 
-    if Settings.Aimbot then
+    if Settings.Aimbot and Settings.AimbotKeyDown then
         local target = nil
         local shortestDistance = Settings.FOVSize
         for _, player in pairs(Players:GetPlayers()) do
@@ -260,8 +277,29 @@ RunService.RenderStepped:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
-    if not processed and input.KeyCode == Enum.KeyCode.LeftControl then
+    if processed then return end
+
+    if Settings.AimbotBindMode and input.UserInputType == Enum.UserInputType.Keyboard then
+        Settings.AimbotBindMode = false
+        Settings.AimbotBindKey = input.KeyCode
+        AimbotBindButton.Text = "Bind Key: " .. input.KeyCode.Name
+        AimbotBindButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        return
+    end
+
+    if input.KeyCode == Settings.AimbotBindKey then
+        Settings.AimbotKeyDown = true
+    end
+
+    if input.KeyCode == Enum.KeyCode.LeftControl then
         Settings.Visible = not Settings.Visible
         MainFrame.Visible = Settings.Visible
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Settings.AimbotBindKey then
+        Settings.AimbotKeyDown = false
     end
 end)
