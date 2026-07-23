@@ -16,6 +16,7 @@ local Settings = {
     AimbotBindKey = Enum.KeyCode.E,
     AimbotBindMode = false,
     AimbotKeyDown = false,
+    AimbotTarget = nil,
     Visible = true
 }
 
@@ -248,24 +249,41 @@ RunService.RenderStepped:Connect(function()
     end
 
     if Settings.Aimbot and Settings.AimbotKeyDown then
-        local target = nil
-        local shortestDistance = Settings.FOVSize
-        for _, player in pairs(Players:GetPlayers()) do
-            -- Solo apunta si es enemigo
-            if player ~= LocalPlayer and IsEnemy(player) and player.Character and player.Character:FindFirstChild("Head") then
-                local hum = player.Character:FindFirstChild("Humanoid")
-                if hum and hum.Health > 0 then
-                    local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
-                    if onScreen then
-                        local mag = (Vector2.new(pos.X, pos.Y) - FOVCircle.Position).Magnitude
-                        if mag < shortestDistance then
-                            target = player
-                            shortestDistance = mag
-                        end
+        local function isValidTarget(player)
+            if player == LocalPlayer or not IsEnemy(player) then return false end
+            local char = player.Character
+            local head = char and char:FindFirstChild("Head")
+            local hum = char and char:FindFirstChild("Humanoid")
+            return head and hum and hum.Health > 0
+        end
+
+        local function isInFOV(player)
+            local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
+            if not onScreen then return false end
+            local mag = (Vector2.new(pos.X, pos.Y) - FOVCircle.Position).Magnitude
+            return mag <= Settings.FOVSize
+        end
+
+        local target = Settings.AimbotTarget
+        if target and not isValidTarget(target) then
+            target = nil
+        end
+
+        if not target then
+            local shortestDistance = Settings.FOVSize
+            for _, player in pairs(Players:GetPlayers()) do
+                if isValidTarget(player) and isInFOV(player) then
+                    local pos, _ = Camera:WorldToViewportPoint(player.Character.Head.Position)
+                    local mag = (Vector2.new(pos.X, pos.Y) - FOVCircle.Position).Magnitude
+                    if mag < shortestDistance then
+                        target = player
+                        shortestDistance = mag
                     end
                 end
             end
         end
+
+        Settings.AimbotTarget = target
         if target and target.Character and target.Character:FindFirstChild("Head") then
             local targetHead = target.Character.Head.Position
             local camCFrame = Camera.CFrame
@@ -273,11 +291,15 @@ RunService.RenderStepped:Connect(function()
             local smoothedDirection = camCFrame.LookVector:Lerp(desiredDirection, Settings.Smoothness)
             Camera.CFrame = CFrame.new(camCFrame.Position, camCFrame.Position + smoothedDirection)
         end
+    else
+        Settings.AimbotTarget = nil
     end
 end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
+    -- Allow bind capture even if the game already processed the input,
+    -- but ignore when a text box is focused.
+    if UserInputService:GetFocusedTextBox() then return end
 
     if Settings.AimbotBindMode and input.UserInputType == Enum.UserInputType.Keyboard then
         Settings.AimbotBindMode = false
@@ -287,19 +309,19 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
-    if input.KeyCode == Settings.AimbotBindKey then
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Settings.AimbotBindKey then
         Settings.AimbotKeyDown = true
     end
 
-    if input.KeyCode == Enum.KeyCode.LeftControl then
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.LeftControl then
         Settings.Visible = not Settings.Visible
         MainFrame.Visible = Settings.Visible
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Settings.AimbotBindKey then
+    if UserInputService:GetFocusedTextBox() then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Settings.AimbotBindKey then
         Settings.AimbotKeyDown = false
     end
 end)
