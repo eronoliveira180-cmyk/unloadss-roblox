@@ -12,6 +12,7 @@ local Settings = {
     Tracers = false,
     Aimbot = false,
     FOVSize = 100,
+    Smoothness = 0.18,
     Visible = true
 }
 
@@ -157,6 +158,22 @@ FOVInput.FocusLost:Connect(function()
     FOVInput.Text = ""
 end)
 
+local SmoothInput = Instance.new("TextBox", ControlFrame)
+SmoothInput.Size = UDim2.new(0, 180, 0, 30)
+SmoothInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+SmoothInput.PlaceholderText = "Smoothness: " .. Settings.Smoothness
+SmoothInput.Text = ""
+SmoothInput.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", SmoothInput)
+SmoothInput.FocusLost:Connect(function()
+    local value = tonumber(SmoothInput.Text)
+    if value then
+        Settings.Smoothness = math.clamp(value, 0, 1)
+    end
+    SmoothInput.PlaceholderText = "Smoothness: " .. string.format("%.2f", Settings.Smoothness)
+    SmoothInput.Text = ""
+end)
+
 --// BUCLE DE RENDERIZADO
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 1
@@ -178,9 +195,28 @@ RunService.RenderStepped:Connect(function()
                 
                 drawings.Box.Visible = Settings.ESP
                 if Settings.ESP then
-                    local sizeX, sizeY = 2200 / pos.Z, 3200 / pos.Z
-                    drawings.Box.Size = Vector2.new(sizeX, sizeY)
-                    drawings.Box.Position = Vector2.new(pos.X - sizeX / 2, pos.Y - sizeY / 2)
+                    local head = char:FindFirstChild("Head")
+                    local topPosition = head and head.Position + Vector3.new(0, 0.4, 0) or hrp.Position + Vector3.new(0, 1.5, 0)
+                    local bottomPosition = hrp.Position - Vector3.new(0, 2, 0)
+                    local leftPosition = hrp.Position - Camera.CFrame.RightVector * 1.2
+                    local rightPosition = hrp.Position + Camera.CFrame.RightVector * 1.2
+
+                    local topPos, topOnScreen = Camera:WorldToViewportPoint(topPosition)
+                    local bottomPos, bottomOnScreen = Camera:WorldToViewportPoint(bottomPosition)
+                    local leftPos, leftOnScreen = Camera:WorldToViewportPoint(leftPosition)
+                    local rightPos, rightOnScreen = Camera:WorldToViewportPoint(rightPosition)
+
+                    if topOnScreen and bottomOnScreen and leftOnScreen and rightOnScreen then
+                        local height = math.max(20, math.abs(topPos.Y - bottomPos.Y))
+                        local width = math.max(15, math.abs(leftPos.X - rightPos.X))
+                        drawings.Box.Size = Vector2.new(width, height)
+                        drawings.Box.Position = Vector2.new((leftPos.X + rightPos.X) / 2 - width / 2, topPos.Y)
+                    else
+                        local sizeX, sizeY = 2200 / pos.Z, 3200 / pos.Z
+                        drawings.Box.Size = Vector2.new(sizeX, sizeY)
+                        drawings.Box.Position = Vector2.new(pos.X - sizeX / 2, pos.Y - sizeY / 2)
+                    end
+
                     drawings.Box.Color = playerColor
                 end
                 
@@ -205,12 +241,21 @@ RunService.RenderStepped:Connect(function()
                     local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
                     if onScreen then
                         local mag = (Vector2.new(pos.X, pos.Y) - FOVCircle.Position).Magnitude
-                        if mag < shortestDistance then target = player shortestDistance = mag end
+                        if mag < shortestDistance then
+                            target = player
+                            shortestDistance = mag
+                        end
                     end
                 end
             end
         end
-        if target then Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position) end
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            local targetHead = target.Character.Head.Position
+            local camCFrame = Camera.CFrame
+            local desiredDirection = (targetHead - camCFrame.Position).Unit
+            local smoothedDirection = camCFrame.LookVector:Lerp(desiredDirection, Settings.Smoothness)
+            Camera.CFrame = CFrame.new(camCFrame.Position, camCFrame.Position + smoothedDirection)
+        end
     end
 end)
 
