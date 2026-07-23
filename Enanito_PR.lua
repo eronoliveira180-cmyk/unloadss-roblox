@@ -58,6 +58,54 @@ local function IsEnemy(player)
     return true 
 end
 
+local function GetCharacterFromTarget(target)
+    if target and target:IsA("Player") then
+        return target.Character
+    elseif target and target:IsA("Model") then
+        return target
+    end
+    return nil
+end
+
+local function GetAimbotCandidates()
+    local candidates = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(candidates, player)
+        end
+    end
+    for _, model in pairs(workspace:GetDescendants()) do
+        if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
+            local hum = model:FindFirstChild("Humanoid")
+            local head = model:FindFirstChild("Head")
+            if hum and head then
+                table.insert(candidates, model)
+            end
+        end
+    end
+    return candidates
+end
+
+local function hasLineOfSight(target)
+    local char = GetCharacterFromTarget(target)
+    local head = char and char:FindFirstChild("Head")
+    if not head then return false end
+
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    rayParams.IgnoreWater = true
+
+    local origin = Camera.CFrame.Position
+    local direction = head.Position - origin
+    local raycastResult = workspace:Raycast(origin, direction, rayParams)
+    if not raycastResult then
+        return true
+    end
+
+    return raycastResult.Instance:IsDescendantOf(char)
+end
+
 --// Funciones ESP
 local function CreateESP(player)
     local data = {
@@ -249,16 +297,19 @@ RunService.RenderStepped:Connect(function()
     end
 
     if Settings.Aimbot and Settings.AimbotKeyDown then
-        local function isValidTarget(player)
-            if player == LocalPlayer or not IsEnemy(player) then return false end
-            local char = player.Character
+        local function isValidTarget(target)
+            if target == LocalPlayer or not IsEnemy(target) then return false end
+            local char = GetCharacterFromTarget(target)
             local head = char and char:FindFirstChild("Head")
             local hum = char and char:FindFirstChild("Humanoid")
-            return head and hum and hum.Health > 0
+            return head and hum and hum.Health > 0 and hasLineOfSight(target)
         end
 
-        local function isInFOV(player)
-            local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
+        local function isInFOV(target)
+            local char = GetCharacterFromTarget(target)
+            local head = char and char:FindFirstChild("Head")
+            if not head then return false end
+            local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
             if not onScreen then return false end
             local mag = (Vector2.new(pos.X, pos.Y) - FOVCircle.Position).Magnitude
             return mag <= Settings.FOVSize
@@ -271,12 +322,14 @@ RunService.RenderStepped:Connect(function()
 
         if not target then
             local shortestDistance = Settings.FOVSize
-            for _, player in pairs(Players:GetPlayers()) do
-                if isValidTarget(player) and isInFOV(player) then
-                    local pos, _ = Camera:WorldToViewportPoint(player.Character.Head.Position)
+            for _, candidate in pairs(GetAimbotCandidates()) do
+                if isValidTarget(candidate) and isInFOV(candidate) then
+                    local char = GetCharacterFromTarget(candidate)
+                    local head = char and char:FindFirstChild("Head")
+                    local pos, _ = Camera:WorldToViewportPoint(head.Position)
                     local mag = (Vector2.new(pos.X, pos.Y) - FOVCircle.Position).Magnitude
                     if mag < shortestDistance then
-                        target = player
+                        target = candidate
                         shortestDistance = mag
                     end
                 end
@@ -284,8 +337,9 @@ RunService.RenderStepped:Connect(function()
         end
 
         Settings.AimbotTarget = target
-        if target and target.Character and target.Character:FindFirstChild("Head") then
-            local targetHead = target.Character.Head.Position
+        if target and isValidTarget(target) then
+            local char = GetCharacterFromTarget(target)
+            local targetHead = char.Head.Position
             local camCFrame = Camera.CFrame
             local desiredDirection = (targetHead - camCFrame.Position).Unit
             local smoothedDirection = camCFrame.LookVector:Lerp(desiredDirection, Settings.Smoothness)
