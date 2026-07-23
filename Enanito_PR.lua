@@ -1,258 +1,222 @@
-local Players = game:GetService("Players")
+--// Servicios
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-
+local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
 local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
+local Camera = workspace.CurrentCamera
 
+--// Variables de Control
 local Settings = {
-    Enabled = true,
-    ToggleKey = Enum.KeyCode.F,
-    ShowAllies = false,
-    ShowOnlyAlive = true,
-    MaxDistance = 250,
-    BindMode = false,
+    ESP = false,
+    Tracers = false,
+    Aimbot = false,
+    FOVSize = 100,
+    Visible = true
 }
 
-local function CreateUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "LegitHUD"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local ESPData = {}
 
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 320, 0, 280)
-    mainFrame.Position = UDim2.new(0.02, 0, 0.02, 0)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
+--// Lógica de Colores y Equipos Corregida
+local function GetPlayerColor(player)
+    local char = player.Character
+    local backpack = player:FindFirstChild("Backpack")
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = mainFrame
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -10, 0, 30)
-    title.Position = UDim2.new(0, 5, 0, 8)
-    title.BackgroundTransparency = 1
-    title.Text = "Legit HUD"
-    title.TextColor3 = Color3.new(1, 1, 1)
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 16
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = mainFrame
-
-    local toggleButton = Instance.new("TextButton")
-    toggleButton.Size = UDim2.new(0, 140, 0, 32)
-    toggleButton.Position = UDim2.new(0, 8, 0, 44)
-    toggleButton.Text = "Overlay: ON"
-    toggleButton.TextColor3 = Color3.new(1, 1, 1)
-    toggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-    toggleButton.Font = Enum.Font.GothamBold
-    toggleButton.TextSize = 13
-    toggleButton.Parent = mainFrame
-
-    local tbCorner = Instance.new("UICorner")
-    tbCorner.CornerRadius = UDim.new(0, 6)
-    tbCorner.Parent = toggleButton
-
-    local bindButton = Instance.new("TextButton")
-    bindButton.Size = UDim2.new(0, 140, 0, 32)
-    bindButton.Position = UDim2.new(0, 156, 0, 44)
-    bindButton.Text = "Bind: F"
-    bindButton.TextColor3 = Color3.new(1, 1, 1)
-    bindButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    bindButton.Font = Enum.Font.GothamBold
-    bindButton.TextSize = 13
-    bindButton.Parent = mainFrame
-
-    local bbCorner = Instance.new("UICorner")
-    bbCorner.CornerRadius = UDim.new(0, 6)
-    bbCorner.Parent = bindButton
-
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -16, 0, 24)
-    statusLabel.Position = UDim2.new(0, 8, 0, 86)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Ativo | F para alternar"
-    statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-    statusLabel.Font = Enum.Font.Gotham
-    statusLabel.TextSize = 13
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-    statusLabel.Parent = mainFrame
-
-    local listFrame = Instance.new("Frame")
-    listFrame.Size = UDim2.new(1, -16, 1, -120)
-    listFrame.Position = UDim2.new(0, 8, 0, 116)
-    listFrame.BackgroundTransparency = 1
-    listFrame.Parent = mainFrame
-
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 4)
-    listLayout.Parent = listFrame
-
-    local function UpdateButtonStates()
-        toggleButton.Text = Settings.Enabled and "Overlay: ON" or "Overlay: OFF"
-        toggleButton.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(80, 80, 80)
-        bindButton.Text = "Bind: " .. tostring(Settings.ToggleKey)
+    -- 1. Detección específica para MM2
+    if char or backpack then
+        local hasKnife = (char and char:FindFirstChild("Knife")) or (backpack and backpack:FindFirstChild("Knife"))
+        local hasGun = (char and char:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun"))
+        
+        if hasKnife then return Color3.fromRGB(255, 0, 0) end -- Rojo: Asesino
+        if hasGun then return Color3.fromRGB(0, 0, 255) end   -- Azul: Sheriff
     end
 
-    toggleButton.MouseButton1Click:Connect(function()
-        Settings.Enabled = not Settings.Enabled
-        statusLabel.Text = Settings.Enabled and "Overlay ativado" or "Overlay desativado"
-        UpdateButtonStates()
+    -- 2. Detección de Equipos (Juegos con equipos oficiales)
+    if player.Team ~= nil then
+        if player.Team == LocalPlayer.Team then
+            return Color3.fromRGB(0, 255, 0) -- Verde: Aliado
+        else
+            return player.TeamColor.Color    -- Color del equipo enemigo
+        end
+    end
+
+    -- 3. Default: Si no hay equipos ni roles especiales
+    return Color3.fromRGB(0, 255, 0) -- Verde (Inocente/Neutral)
+end
+
+--// Filtro de Aimbot: No apuntar a aliados
+local function IsEnemy(player)
+    if player.Team ~= nil and LocalPlayer.Team ~= nil then
+        return player.Team ~= LocalPlayer.Team
+    end
+    -- En juegos sin equipos (como MM2), todos son objetivos potenciales
+    return true 
+end
+
+--// Funciones ESP
+local function CreateESP(player)
+    local data = {
+        Box = Drawing.new("Square"),
+        Tracer = Drawing.new("Line")
+    }
+    data.Box.Thickness = 1.5
+    data.Box.Filled = false
+    data.Tracer.Thickness = 1
+    ESPData[player] = data
+end
+
+local function RemoveESP(player)
+    if ESPData[player] then
+        ESPData[player].Box:Remove()
+        ESPData[player].Tracer:Remove()
+        ESPData[player] = nil
+    end
+end
+
+for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then CreateESP(p) end end
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(RemoveESP)
+
+--// Interfaz GUI: Vortex-Aim (Colapsable)
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+local MainFrame = Instance.new("Frame", ScreenGui)
+local UICorner = Instance.new("UICorner", MainFrame)
+local Title = Instance.new("TextButton", MainFrame) 
+local ControlFrame = Instance.new("Frame", MainFrame) 
+local UIListLayout = Instance.new("UIListLayout", ControlFrame)
+
+MainFrame.Size = UDim2.new(0, 200, 0, 260)
+MainFrame.Position = UDim2.new(0.5, -100, 0.5, -130)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.Active = true
+MainFrame.Draggable = true
+UICorner.CornerRadius = UDim.new(0, 8)
+
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundTransparency = 1
+Title.Text = "Vortex-Aim [▼]"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+
+ControlFrame.Name = "Controls"
+ControlFrame.Size = UDim2.new(1, 0, 1, -40)
+ControlFrame.Position = UDim2.new(0, 0, 0, 40)
+ControlFrame.BackgroundTransparency = 1
+ControlFrame.ClipsDescendants = true 
+UIListLayout.Padding = UDim.new(0, 7)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- Animación de colapsar controles hacia arriba
+local expanded = true
+Title.MouseButton1Click:Connect(function()
+    expanded = not expanded
+    if expanded then
+        MainFrame:TweenSize(UDim2.new(0, 200, 0, 260), "Out", "Quad", 0.3, true)
+        ControlFrame.Visible = true
+        Title.Text = "Vortex-Aim [▼]"
+    else
+        MainFrame:TweenSize(UDim2.new(0, 200, 0, 40), "Out", "Quad", 0.3, true)
+        task.wait(0.3)
+        if not expanded then ControlFrame.Visible = false end
+        Title.Text = "Vortex-Aim [▲]"
+    end
+end)
+
+local function CreateButton(settingKey, textOn, textOff, colorOn)
+    local btn = Instance.new("TextButton", ControlFrame)
+    btn.Size = UDim2.new(0, 180, 0, 35)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.Text = textOff
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 13
+    Instance.new("UICorner", btn)
+    
+    btn.MouseButton1Click:Connect(function()
+        Settings[settingKey] = not Settings[settingKey]
+        btn.Text = Settings[settingKey] and textOn or textOff
+        btn.BackgroundColor3 = Settings[settingKey] and colorOn or Color3.fromRGB(45, 45, 45)
     end)
+end
 
-    bindButton.MouseButton1Click:Connect(function()
-        Settings.BindMode = true
-        statusLabel.Text = "Pressione uma tecla..."
-        bindButton.Text = "Pressione..."
-    end)
+CreateButton("ESP", "ESP: ON", "ESP: OFF", Color3.fromRGB(0, 120, 255))
+CreateButton("Tracers", "Tracers: ON", "Tracers: OFF", Color3.fromRGB(0, 120, 255))
+CreateButton("Aimbot", "Aimbot: ON", "Aimbot: OFF", Color3.fromRGB(255, 0, 0))
 
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then return end
+local FOVInput = Instance.new("TextBox", ControlFrame)
+FOVInput.Size = UDim2.new(0, 180, 0, 30)
+FOVInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+FOVInput.PlaceholderText = "FOV Size: " .. Settings.FOVSize
+FOVInput.Text = ""
+FOVInput.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", FOVInput)
+FOVInput.FocusLost:Connect(function()
+    Settings.FOVSize = tonumber(FOVInput.Text) or Settings.FOVSize
+    FOVInput.PlaceholderText = "FOV Size: " .. Settings.FOVSize
+    FOVInput.Text = ""
+end)
 
-        if Settings.BindMode then
-            if input.UserInputType == Enum.UserInputType.Keyboard then
-                Settings.ToggleKey = input.KeyCode
-                Settings.BindMode = false
-                statusLabel.Text = "Bind definido para " .. tostring(Settings.ToggleKey)
-                UpdateButtonStates()
-            end
-            return
-        end
+--// BUCLE DE RENDERIZADO
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1
+FOVCircle.Color = Color3.new(1, 1, 1)
+FOVCircle.Transparency = 0.5
 
-        if input.KeyCode == Settings.ToggleKey then
-            Settings.Enabled = not Settings.Enabled
-            statusLabel.Text = Settings.Enabled and "Overlay ativado" or "Overlay desativado"
-            UpdateButtonStates()
-        end
-    end)
+RunService.RenderStepped:Connect(function()
+    FOVCircle.Radius = Settings.FOVSize
+    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    FOVCircle.Visible = Settings.Aimbot 
 
-    local function ClearList()
-        for _, child in ipairs(listFrame:GetChildren()) do
-            if child:IsA("TextLabel") then
-                child:Destroy()
-            end
-        end
+    for player, drawings in pairs(ESPData) do
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+            local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            if onScreen then
+                local playerColor = GetPlayerColor(player) -- Detección dinámica de color
+                
+                drawings.Box.Visible = Settings.ESP
+                if Settings.ESP then
+                    local sizeX, sizeY = 2200 / pos.Z, 3200 / pos.Z
+                    drawings.Box.Size = Vector2.new(sizeX, sizeY)
+                    drawings.Box.Position = Vector2.new(pos.X - sizeX / 2, pos.Y - sizeY / 2)
+                    drawings.Box.Color = playerColor
+                end
+                
+                drawings.Tracer.Visible = Settings.Tracers
+                if Settings.Tracers then
+                    drawings.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    drawings.Tracer.To = Vector2.new(pos.X, pos.Y)
+                    drawings.Tracer.Color = playerColor
+                end
+            else drawings.Box.Visible, drawings.Tracer.Visible = false, false end
+        else drawings.Box.Visible, drawings.Tracer.Visible = false, false end
     end
 
-    local function IsTargetVisible(targetCharacter)
-        if not Camera then
-            return false
-        end
-
-        local localCharacter = LocalPlayer.Character
-        local localHRP = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-        local targetHRP = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-
-        if not localHRP or not targetHRP then
-            return false
-        end
-
-        local origin = localHRP.Position + Vector3.new(0, 1.5, 0)
-        local direction = targetHRP.Position - origin
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-        raycastParams.FilterDescendantsInstances = { localCharacter }
-
-        local result = Workspace:Raycast(origin, direction, raycastParams)
-
-        if not result then
-            return true
-        end
-
-        if result.Instance and result.Instance:IsDescendantOf(targetCharacter) then
-            return true
-        end
-
-        return false
-    end
-
-    local function GetPlayerInfo(player)
-        local character = player.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local hrp = character and character:FindFirstChild("HumanoidRootPart")
-
-        if not character or not humanoid or not hrp then
-            return nil
-        end
-
-        if Settings.ShowOnlyAlive and humanoid.Health <= 0 then
-            return nil
-        end
-
-        local localHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not localHRP then
-            return nil
-        end
-
-        local distance = (hrp.Position - localHRP.Position).Magnitude
-        if distance > Settings.MaxDistance then
-            return nil
-        end
-
-        local sameTeam = LocalPlayer.Team ~= nil and player.Team ~= nil and player.Team == LocalPlayer.Team
-        if not Settings.ShowAllies and sameTeam then
-            return nil
-        end
-
-        return {
-            Name = player.Name,
-            Team = player.Team and player.Team.Name or "Nenhum",
-            Health = math.floor(humanoid.Health),
-            Distance = math.floor(distance),
-            Visible = IsTargetVisible(character),
-        }
-    end
-
-    local function RefreshList()
-        if not Settings.Enabled then
-            ClearList()
-            return
-        end
-
-        ClearList()
-
-        local entries = {}
-
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                local info = GetPlayerInfo(player)
-                if info then
-                    table.insert(entries, info)
+    if Settings.Aimbot then
+        local target = nil
+        local shortestDistance = Settings.FOVSize
+        for _, player in pairs(Players:GetPlayers()) do
+            -- Solo apunta si es enemigo
+            if player ~= LocalPlayer and IsEnemy(player) and player.Character and player.Character:FindFirstChild("Head") then
+                local hum = player.Character:FindFirstChild("Humanoid")
+                if hum and hum.Health > 0 then
+                    local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
+                    if onScreen then
+                        local mag = (Vector2.new(pos.X, pos.Y) - FOVCircle.Position).Magnitude
+                        if mag < shortestDistance then target = player shortestDistance = mag end
+                    end
                 end
             end
         end
-
-        table.sort(entries, function(a, b)
-            return a.Distance < b.Distance
-        end)
-
-        for _, info in ipairs(entries) do
-            local label = Instance.new("TextLabel")
-            label.Size = UDim2.new(1, -4, 0, 18)
-            label.BackgroundTransparency = 1
-            label.Text = string.format("%s | %s | HP:%s | Dist:%s | Vis:%s", info.Name, info.Team, info.Health, info.Distance, info.Visible and "Sim" or "Nao")
-            label.TextColor3 = Color3.fromRGB(255, 255, 255)
-            label.Font = Enum.Font.Gotham
-            label.TextSize = 13
-            label.TextXAlignment = Enum.TextXAlignment.Left
-            label.Parent = listFrame
-        end
+        if target then Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position) end
     end
+end)
 
-    RefreshList()
-    UpdateButtonStates()
-
-    RunService.RenderStepped:Connect(function()
-        RefreshList()
-    end)
-
-    Players.PlayerAdded:Connect(RefreshList)
-    Players.PlayerRemoving:Connect(RefreshList)
-end
-
-CreateUI()
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.LeftControl then
+        Settings.Visible = not Settings.Visible
+        MainFrame.Visible = Settings.Visible
+    end
+end)
