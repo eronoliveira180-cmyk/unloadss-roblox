@@ -14,6 +14,7 @@ local Settings = {
     FOVSize = 100,
     Smoothness = 0.18,
     AimbotBindKey = Enum.KeyCode.E,
+    AimbotBindInputType = Enum.UserInputType.Keyboard,
     AimbotBindMode = false,
     AimbotKeyDown = false,
     AimbotTarget = nil,
@@ -355,19 +356,21 @@ UserInputService.InputBegan:Connect(function(input, processed)
     -- but ignore when a text box is focused.
     if UserInputService:GetFocusedTextBox() then return end
 
-    if Settings.AimbotBindMode and input.UserInputType == Enum.UserInputType.Keyboard then
+    if Settings.AimbotBindMode then
         Settings.AimbotBindMode = false
+        Settings.AimbotBindInputType = input.UserInputType
         Settings.AimbotBindKey = input.KeyCode
-        AimbotBindButton.Text = "Bind Key: " .. input.KeyCode.Name
+        local bindName = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode.Name or input.UserInputType.Name
+        AimbotBindButton.Text = "Bind Key: " .. bindName
         AimbotBindButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
         return
     end
 
-    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Settings.AimbotBindKey then
+    if input.UserInputType == Settings.AimbotBindInputType and input.KeyCode == Settings.AimbotBindKey then
         Settings.AimbotKeyDown = true
     end
 
-    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.LeftControl then
+    if input.KeyCode == Enum.KeyCode.LeftControl then
         Settings.Visible = not Settings.Visible
         MainFrame.Visible = Settings.Visible
     end
@@ -375,7 +378,7 @@ end)
 
 UserInputService.InputEnded:Connect(function(input, processed)
     if UserInputService:GetFocusedTextBox() then return end
-    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Settings.AimbotBindKey then
+    if input.UserInputType == Settings.AimbotBindInputType and input.KeyCode == Settings.AimbotBindKey then
         Settings.AimbotKeyDown = false
     end
 end)
