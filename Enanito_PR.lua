@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local Teams = game:GetService("Teams")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
 --// Variables de Control
 local Settings = {
@@ -24,6 +25,7 @@ local Settings = {
 }
 
 local ESPData = {}
+local RenderConn, InputBeganConn, InputEndedConn, PlayerAddedConn, PlayerRemovingConn
 
 --// Lógica de Colores y Equipos Corregida
 local function GetPlayerColor(player)
@@ -109,6 +111,13 @@ local function hasLineOfSight(target)
     return raycastResult.Instance:IsDescendantOf(char)
 end
 
+local function getSilentAimCFrame(target)
+    local char = GetCharacterFromTarget(target)
+    local head = char and char:FindFirstChild("Head")
+    if not head then return nil end
+    return CFrame.new(head.Position)
+end
+
 --// Funciones ESP
 local function CreateESP(player)
     local data = {
@@ -130,15 +139,58 @@ local function RemoveESP(player)
 end
 
 for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then CreateESP(p) end end
-Players.PlayerAdded:Connect(CreateESP)
-Players.PlayerRemoving:Connect(RemoveESP)
+PlayerAddedConn = Players.PlayerAdded:Connect(CreateESP)
+PlayerRemovingConn = Players.PlayerRemoving:Connect(RemoveESP)
+
+local function unloadScript()
+    Settings.Aimbot = false
+    Settings.AimbotKeyDown = false
+    Settings.AimbotTarget = nil
+    if RenderConn then
+        RenderConn:Disconnect()
+        RenderConn = nil
+    end
+    if InputBeganConn then
+        InputBeganConn:Disconnect()
+        InputBeganConn = nil
+    end
+    if InputEndedConn then
+        InputEndedConn:Disconnect()
+        InputEndedConn = nil
+    end
+    if PlayerAddedConn then
+        PlayerAddedConn:Disconnect()
+        PlayerAddedConn = nil
+    end
+    if PlayerRemovingConn then
+        PlayerRemovingConn:Disconnect()
+        PlayerRemovingConn = nil
+    end
+
+    for _, data in pairs(ESPData) do
+        if data.Box then data.Box:Remove() end
+        if data.Tracer then data.Tracer:Remove() end
+    end
+    ESPData = {}
+
+    if FOVCircle then
+        FOVCircle.Visible = false
+        FOVCircle:Remove()
+        FOVCircle = nil
+    end
+
+    if ScreenGui then
+        ScreenGui:Destroy()
+        ScreenGui = nil
+    end
+end
 
 --// Interfaz GUI: Vortex-Aim (Colapsable)
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 local MainFrame = Instance.new("Frame", ScreenGui)
 local UICorner = Instance.new("UICorner", MainFrame)
 local Title = Instance.new("TextButton", MainFrame) 
-local ControlFrame = Instance.new("Frame", MainFrame) 
+local ControlFrame = Instance.new("ScrollingFrame", MainFrame) 
 local UIListLayout = Instance.new("UIListLayout", ControlFrame)
 
 MainFrame.Size = UDim2.new(0, 200, 0, 260)
@@ -159,7 +211,12 @@ ControlFrame.Name = "Controls"
 ControlFrame.Size = UDim2.new(1, 0, 1, -40)
 ControlFrame.Position = UDim2.new(0, 0, 0, 40)
 ControlFrame.BackgroundTransparency = 1
-ControlFrame.ClipsDescendants = true 
+ControlFrame.ClipsDescendants = true
+ControlFrame.Active = true
+ControlFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ControlFrame.ScrollBarThickness = 6
+ControlFrame.ScrollBarImageColor3 = Color3.fromRGB(140, 140, 140)
+ControlFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 UIListLayout.Padding = UDim.new(0, 7)
 UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
@@ -198,7 +255,19 @@ end
 
 CreateButton("ESP", "ESP: ON", "ESP: OFF", Color3.fromRGB(0, 120, 255))
 CreateButton("Tracers", "Tracers: ON", "Tracers: OFF", Color3.fromRGB(0, 120, 255))
-CreateButton("Aimbot", "Aimbot: ON", "Aimbot: OFF", Color3.fromRGB(255, 0, 0))
+CreateButton("Aimbot", "Silent Aim: ON", "Silent Aim: OFF", Color3.fromRGB(255, 0, 0))
+
+local UnloadButton = Instance.new("TextButton", ControlFrame)
+UnloadButton.Size = UDim2.new(0, 180, 0, 35)
+UnloadButton.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+UnloadButton.Text = "Unload Script"
+UnloadButton.TextColor3 = Color3.new(1, 1, 1)
+UnloadButton.Font = Enum.Font.GothamBold
+UnloadButton.TextSize = 13
+Instance.new("UICorner", UnloadButton)
+UnloadButton.MouseButton1Click:Connect(function()
+    unloadScript()
+end)
 
 local AimbotBindButton = Instance.new("TextButton", ControlFrame)
 AimbotBindButton.Size = UDim2.new(0, 180, 0, 35)
@@ -249,7 +318,7 @@ FOVCircle.Thickness = 1
 FOVCircle.Color = Color3.new(1, 1, 1)
 FOVCircle.Transparency = 0.5
 
-RunService.RenderStepped:Connect(function(delta)
+RenderConn = RunService.RenderStepped:Connect(function(delta)
     FOVCircle.Radius = Settings.FOVSize
     FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     FOVCircle.Visible = Settings.Aimbot 
@@ -349,12 +418,12 @@ RunService.RenderStepped:Connect(function(delta)
 
         Settings.AimbotTarget = target
         if target and isValidTarget(target) then
-            local char = GetCharacterFromTarget(target)
-            local targetHead = char.Head.Position
-            local camCFrame = Camera.CFrame
-            local desiredDirection = (targetHead - camCFrame.Position).Unit
-            local smoothedDirection = camCFrame.LookVector:Lerp(desiredDirection, Settings.Smoothness)
-            Camera.CFrame = CFrame.new(camCFrame.Position, camCFrame.Position + smoothedDirection)
+            local aimCFrame = getSilentAimCFrame(target)
+            if aimCFrame then
+                pcall(function()
+                    Mouse.Hit = aimCFrame
+                end)
+            end
         end
     else
         Settings.AimbotTarget = nil
@@ -362,7 +431,7 @@ RunService.RenderStepped:Connect(function(delta)
     end
 end)
 
-UserInputService.InputBegan:Connect(function(input, processed)
+InputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
     -- Allow bind capture even if the game already processed the input,
     -- but ignore when a text box is focused.
     if UserInputService:GetFocusedTextBox() then return end
@@ -397,7 +466,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input, processed)
+InputEndedConn = UserInputService.InputEnded:Connect(function(input, processed)
     if UserInputService:GetFocusedTextBox() then return end
     if input.UserInputType == Settings.AimbotBindInputType and input.KeyCode == Settings.AimbotBindKey then
         Settings.AimbotKeyDown = false
