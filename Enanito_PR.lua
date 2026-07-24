@@ -18,6 +18,8 @@ local Settings = {
     AimbotBindMode = false,
     AimbotKeyDown = false,
     AimbotTarget = nil,
+    AimbotTargetLostTime = 0,
+    AimbotTargetHoldTime = 0.25,
     Visible = true
 }
 
@@ -75,12 +77,12 @@ local function GetAimbotCandidates()
             table.insert(candidates, player)
         end
     end
-    for _, model in pairs(workspace:GetDescendants()) do
-        if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
-            local hum = model:FindFirstChild("Humanoid")
-            local head = model:FindFirstChild("Head")
+    for _, child in pairs(workspace:GetChildren()) do
+        if child:IsA("Model") and not Players:GetPlayerFromCharacter(child) then
+            local hum = child:FindFirstChild("Humanoid")
+            local head = child:FindFirstChild("Head")
             if hum and head then
-                table.insert(candidates, model)
+                table.insert(candidates, child)
             end
         end
     end
@@ -247,7 +249,7 @@ FOVCircle.Thickness = 1
 FOVCircle.Color = Color3.new(1, 1, 1)
 FOVCircle.Transparency = 0.5
 
-RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function(delta)
     FOVCircle.Radius = Settings.FOVSize
     FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     FOVCircle.Visible = Settings.Aimbot 
@@ -319,12 +321,20 @@ RunService.RenderStepped:Connect(function()
         local target = Settings.AimbotTarget
         if target and not isValidTarget(target) then
             target = nil
+            Settings.AimbotTargetLostTime = 0
+        elseif target and not isInFOV(target) then
+            Settings.AimbotTargetLostTime = Settings.AimbotTargetLostTime + delta
+            if Settings.AimbotTargetLostTime > Settings.AimbotTargetHoldTime then
+                target = nil
+            end
+        else
+            Settings.AimbotTargetLostTime = 0
         end
 
         if not target then
             local shortestDistance = Settings.FOVSize
             for _, candidate in pairs(GetAimbotCandidates()) do
-                if isValidTarget(candidate) and isInFOV(candidate) then
+                if isInFOV(candidate) and isValidTarget(candidate) then
                     local char = GetCharacterFromTarget(candidate)
                     local head = char and char:FindFirstChild("Head")
                     local pos, _ = Camera:WorldToViewportPoint(head.Position)
@@ -348,6 +358,7 @@ RunService.RenderStepped:Connect(function()
         end
     else
         Settings.AimbotTarget = nil
+        Settings.AimbotTargetLostTime = 0
     end
 end)
 
@@ -366,7 +377,17 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
-    if input.UserInputType == Settings.AimbotBindInputType and input.KeyCode == Settings.AimbotBindKey then
+    local function isBindInput(input)
+        if input.UserInputType ~= Settings.AimbotBindInputType then
+            return false
+        end
+        if Settings.AimbotBindInputType == Enum.UserInputType.Keyboard then
+            return input.KeyCode == Settings.AimbotBindKey
+        end
+        return true
+    end
+
+    if isBindInput(input) then
         Settings.AimbotKeyDown = true
     end
 
