@@ -25,7 +25,7 @@ local Settings = {
 }
 
 local ESPData = {}
-local RenderConn, InputBeganConn, InputEndedConn, PlayerAddedConn, PlayerRemovingConn
+local RenderConn, InputBeganConn, InputEndedConn, PlayerAddedConn, PlayerRemovingConn, MouseButtonDownConn
 
 --// Lógica de Colores y Equipos Corregida
 local function GetPlayerColor(player)
@@ -111,11 +111,22 @@ local function hasLineOfSight(target)
     return raycastResult.Instance:IsDescendantOf(char)
 end
 
-local function getSilentAimCFrame(target)
+local function getSilentAimTarget(target)
     local char = GetCharacterFromTarget(target)
     local head = char and char:FindFirstChild("Head")
-    if not head then return nil end
-    return CFrame.new(head.Position)
+    if not head then return nil, nil end
+    return head, CFrame.new(head.Position)
+end
+
+local function applySilentAim(target)
+    local head, aimCFrame = getSilentAimTarget(target)
+    if not aimCFrame then return end
+    pcall(function()
+        Mouse.Hit = aimCFrame
+        if head then
+            Mouse.Target = head
+        end
+    end)
 end
 
 --// Funciones ESP
@@ -158,6 +169,10 @@ local function unloadScript()
         InputEndedConn:Disconnect()
         InputEndedConn = nil
     end
+    if MouseButtonDownConn then
+        MouseButtonDownConn:Disconnect()
+        MouseButtonDownConn = nil
+    end
     if PlayerAddedConn then
         PlayerAddedConn:Disconnect()
         PlayerAddedConn = nil
@@ -185,7 +200,7 @@ local function unloadScript()
     end
 end
 
---// Interfaz GUI: Vortex-Aim (Colapsable)
+--// Interfaz GUI: Unloadss-Aim (Colapsable)
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 local MainFrame = Instance.new("Frame", ScreenGui)
 local UICorner = Instance.new("UICorner", MainFrame)
@@ -202,7 +217,7 @@ UICorner.CornerRadius = UDim.new(0, 8)
 
 Title.Size = UDim2.new(1, 0, 0, 40)
 Title.BackgroundTransparency = 1
-Title.Text = "Vortex-Aim [▼]"
+Title.Text = "Unloadss-Aim [▼]"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
@@ -227,12 +242,12 @@ Title.MouseButton1Click:Connect(function()
     if expanded then
         MainFrame:TweenSize(UDim2.new(0, 200, 0, 260), "Out", "Quad", 0.3, true)
         ControlFrame.Visible = true
-        Title.Text = "Vortex-Aim [▼]"
+        Title.Text = "Unloadss-Aim [▼]"
     else
         MainFrame:TweenSize(UDim2.new(0, 200, 0, 40), "Out", "Quad", 0.3, true)
         task.wait(0.3)
         if not expanded then ControlFrame.Visible = false end
-        Title.Text = "Vortex-Aim [▲]"
+        Title.Text = "Unloadss-Aim [▲]"
     end
 end)
 
@@ -418,16 +433,17 @@ RenderConn = RunService.RenderStepped:Connect(function(delta)
 
         Settings.AimbotTarget = target
         if target and isValidTarget(target) then
-            local aimCFrame = getSilentAimCFrame(target)
-            if aimCFrame then
-                pcall(function()
-                    Mouse.Hit = aimCFrame
-                end)
-            end
+            applySilentAim(target)
         end
     else
         Settings.AimbotTarget = nil
         Settings.AimbotTargetLostTime = 0
+    end
+end)
+
+MouseButtonDownConn = Mouse.Button1Down:Connect(function()
+    if Settings.Aimbot and Settings.AimbotKeyDown and Settings.AimbotTarget then
+        applySilentAim(Settings.AimbotTarget)
     end
 end)
 
